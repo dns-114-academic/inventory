@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Gestion Inventaire</title>
+</head>
+<body>
+
+  <h1>Gestion de l'Inventaire</h1>
+
+  <h2>Ajouter un produit</h2>
+  <input id="inp-name" type="text" placeholder="Nom du produit">
+  <select id="inp-category">
+    <option value=""> Catégorie! </option>
+    <option value="Électronique">Électronique</option>
+    <option value="Mobilier">Mobilier</option>
+    <option value="Consommables">Consommables</option>
+  </select>
+  <input id="inp-quantity" type="number" placeholder="Quantité" min="0">
+  <input id="inp-threshold" type="number" placeholder="Seuil alerte (défaut 5)" min="0">
+  <button id="addBtn">Ajouter</button>
+  <p id="form-error" style="color:red;"></p>
+
+  <hr>
+
+  <label>Filtrer par catégorie : </label>
+  <select id="filterSelect">
+    <option value="">Toutes</option>
+    <option value="Électronique">Électronique</option>
+    <option value="Mobilier">Mobilier</option>
+    <option value="Consommables">Consommables</option>
+  </select>
+
+  <table border="1" cellpadding="6" style="margin-top:16px;">
+    <thead>
+      <tr>
+        <th>Nom</th>
+        <th>Catégorie</th>
+        <th>Quantité</th>
+        <th>Seuil alerte</th>
+        <th>Dernière modification</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="product-body">
+      <tr><td colspan="6">Chargement...</td></tr>
+    </tbody>
+  </table>
+
+  <script>
+    var tbody = document.getElementById('product-body');
+    var filterSel = document.getElementById('filterSelect');
+    var formError = document.getElementById('form-error');
+
+    function loadProducts() {
+      var cat = filterSel.value;
+      var url = '/api/products';
+      if (cat != '') {
+        url = url + '?category=' + cat;
+      }
+
+      fetch(url).then(function(res) {
+        return res.json();
+      }).then(function(products) {
+        tbody.innerHTML = '';
+        if (products.length == 0) {
+          tbody.innerHTML = '<tr><td colspan="6">Aucun produit.</td></tr>';
+          return;
+        }
+        for (var i = 0; i < products.length; i++) {
+          tbody.appendChild(buildRow(products[i]));
+        }
+      });
+    }
+
+    function buildRow(p) {
+      var tr = document.createElement('tr');
+      tr.dataset.id = p._id;
+
+      if (p.quantity <= p.minThreshold) {
+        tr.style.backgroundColor = '#ffcccc';
+      }
+
+      var date = new Date(p.lastUpdated).toLocaleString('fr-FR');
+
+      tr.innerHTML =
+        '<td>' + p.name + '</td>' +
+        '<td>' + p.category + '</td>' +
+        '<td>' +
+          '<button onclick="updateStock(\'' + p._id + '\', \'remove\')">-</button>' +
+          '<span id="qty-' + p._id + '"> ' + p.quantity + ' </span>' +
+          '<button onclick="updateStock(\'' + p._id + '\', \'add\')">+</button>' +
+        '</td>' +
+        '<td>' + p.minThreshold + '</td>' +
+        '<td id="date-' + p._id + '">' + date + '</td>' +
+        '<td><button onclick="deleteProduct(\'' + p._id + '\')">Supprimer</button></td>';
+
+      return tr;
+    }
+
+    function updateStock(id, action) {
+      fetch('/api/products/' + id + '/stock', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: action, amount: 1 })
+      }).then(function(res) {
+        return res.json();
+      }).then(function(data) {
+        if (data.error) {
+          alert(data.error);
+          return;
+        }
+        document.getElementById('qty-' + id).textContent = ' ' + data.quantity + ' ';
+        document.getElementById('date-' + id).textContent = new Date(data.lastUpdated).toLocaleString('fr-FR');
+
+        var row = document.querySelector('tr[data-id="' + id + '"]');
+        if (data.quantity <= data.minThreshold) {
+          row.style.backgroundColor = '#ffcccc';
+        } else {
+          row.style.backgroundColor = '';
+        }
+      });
+    }
+
+    function deleteProduct(id) {
+      fetch('/api/products/' + id, { method: 'DELETE' }).then(function(res) {
+        return res.json();
+      }).then(function(data) {
+        if (data.error) {
+          alert(data.error);
+          return;
+        }
+        var row = document.querySelector('tr[data-id="' + id + '"]');
+        row.remove();
+      });
+    }
+
+    document.getElementById('addBtn').addEventListener('click', function() {
+      formError.textContent = '';
+
+      var name = document.getElementById('inp-name').value;
+      var category = document.getElementById('inp-category').value;
+      var quantity = document.getElementById('inp-quantity').value;
+      var threshold = document.getElementById('inp-threshold').value;
+
+      if (name == '') { formError.textContent = 'Le nom est obligatoire'; return; }
+      if (category == '') { formError.textContent = 'La catégorie est obligatoire'; return; }
+      if (quantity == '') { formError.textContent = 'La quantité est obligatoire'; return; }
+
+      var body = { name: name, category: category, quantity: Number(quantity) };
+      if (threshold != '') { body.minThreshold = Number(threshold); }
+
+      fetch('/api/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      }).then(function(res) {
+        return res.json();
+      }).then(function(data) {
+        if (data.error) { formError.textContent = data.error; return; }
+
+        document.getElementById('inp-name').value = '';
+        document.getElementById('inp-category').value = '';
+        document.getElementById('inp-quantity').value = '';
+        document.getElementById('inp-threshold').value = '';
+
+        tbody.prepend(buildRow(data));
+      });
+    });
+
+    filterSel.addEventListener('change', loadProducts);
+
+    loadProducts();
+  </script>
+
+</body>
+</html>
